@@ -1,0 +1,43 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --canvas: 220 26% 6%;
+    --surface: 220 22% 9%;
+    --elevated: 220 20% 13%;
+    --line: 220 14% 20%;
+    --ink: 210 20% 96%;
+    --muted: 216 12% 62%;
+    --brand: 205 90% 54%;
+    --brand-ink: 220 40% 8%;
+    --accent: 41 88% 60%;
+    --positive: 152 55% 45%;
+    --warning: 38 92% 55%;
+    --danger: 0 72% 56%;
+  }
+
+  html {
+    color-scheme: dark;
+  }
+
+  body {
+    @apply bg-canvas text-ink antialiased;
+  }
+
+  /* Native selects inherit the dark surface; the option list is OS-drawn. */
+  option {
+    @apply bg-elevated text-ink;
+  }
+}
+
+@layer components {
+  .field-label {
+    @apply mb-1.5 block text-xs font-medium uppercase tracking-wide text-muted;
+  }
+
+  .stat-value {
+    @apply font-mono text-sm text-ink;
+  }
+}
