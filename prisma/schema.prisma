@@ -1,0 +1,212 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id            String    @id @default(cuid())
+  email         String    @unique
+  passwordHash  String
+  role          String
+  status        String    @default("ACTIVE")
+  suspendedAt   DateTime?
+  suspendReason String?
+  createdAt     DateTime  @default(now())
+
+  buyerProfile      BuyerProfile?
+  sellerProfile     SellerProfile?
+  sentRequests      ContactRequest[]   @relation("RequestInitiator")
+  receivedRequests  ContactRequest[]   @relation("RequestTarget")
+  moderationActions ModerationAction[] @relation("ModerationActor")
+
+  @@index([role, status])
+}
+
+model BuyerProfile {
+  id                      String   @id @default(cuid())
+  userId                  String   @unique
+  displayName             String
+  headline                String
+  thesis                  String
+  investorType            String
+  timeline                String
+  ticketMinEur            Int
+  ticketMaxEur            Int
+  // null means the buyer is open to both active businesses and bare licences
+  preferredBusinessStatus String?
+  contactName             String
+  phone                   String?
+  isPublished             Boolean  @default(false)
+  createdAt               DateTime @default(now())
+  updatedAt               DateTime @updatedAt
+
+  user       User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  categories BuyerCategory[]
+  countries  BuyerCountry[]
+  requests   ContactRequest[]
+
+  @@index([isPublished])
+}
+
+model SellerProfile {
+  id          String   @id @default(cuid())
+  userId      String   @unique
+  companyName String
+  about       String
+  website     String?
+  contactName String
+  phone       String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  user   User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  assets Asset[]
+}
+
+model Category {
+  id        String @id @default(cuid())
+  slug      String @unique
+  name      String
+  sortOrder Int    @default(0)
+
+  assets Asset[]
+  buyers BuyerCategory[]
+}
+
+model Country {
+  id   String @id @default(cuid())
+  slug String @unique
+  name String
+  // ISO 3166-1 alpha-2, used to render the flag without shipping image assets
+  code String
+
+  assets Asset[]
+  buyers BuyerCountry[]
+}
+
+model Benefit {
+  id   String @id @default(cuid())
+  slug String @unique
+  name String
+
+  assets AssetBenefit[]
+}
+
+model BuyerCategory {
+  buyerProfileId String
+  categoryId     String
+
+  buyerProfile BuyerProfile @relation(fields: [buyerProfileId], references: [id], onDelete: Cascade)
+  category     Category     @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+
+  @@id([buyerProfileId, categoryId])
+  @@index([categoryId])
+}
+
+model BuyerCountry {
+  buyerProfileId String
+  countryId      String
+
+  buyerProfile BuyerProfile @relation(fields: [buyerProfileId], references: [id], onDelete: Cascade)
+  country      Country      @relation(fields: [countryId], references: [id], onDelete: Cascade)
+
+  @@id([buyerProfileId, countryId])
+  @@index([countryId])
+}
+
+model AssetBenefit {
+  assetId   String
+  benefitId String
+
+  asset   Asset   @relation(fields: [assetId], references: [id], onDelete: Cascade)
+  benefit Benefit @relation(fields: [benefitId], references: [id], onDelete: Cascade)
+
+  @@id([assetId, benefitId])
+  @@index([benefitId])
+}
+
+model Asset {
+  id        String @id @default(cuid())
+  // public listing number shown as #742
+  reference Int    @unique
+  sellerId  String
+
+  title            String
+  summary          String
+  description      String
+  categoryId       String
+  countryId        String
+  licenseType      String
+  regulator        String
+  businessStatus   String
+  askingPriceEur   Int
+  annualRevenueEur Int?
+  ebitdaEur        Int?
+  employees        Int
+  yearOfIssue      Int
+  views            Int    @default(0)
+
+  status      String    @default("DRAFT")
+  publishedAt DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  seller   SellerProfile    @relation(fields: [sellerId], references: [id], onDelete: Cascade)
+  category Category         @relation(fields: [categoryId], references: [id])
+  country  Country          @relation(fields: [countryId], references: [id])
+  benefits AssetBenefit[]
+  requests ContactRequest[]
+
+  @@index([status, publishedAt])
+  @@index([sellerId])
+  @@index([categoryId])
+  @@index([countryId])
+  @@index([askingPriceEur])
+}
+
+model ContactRequest {
+  id             String    @id @default(cuid())
+  initiatorId    String
+  targetId       String
+  // exactly one of these is set: assetId for buyer -> seller, buyerProfileId for seller -> buyer
+  assetId        String?
+  buyerProfileId String?
+  message        String
+  status         String    @default("PENDING")
+  responseNote   String?
+  createdAt      DateTime  @default(now())
+  respondedAt    DateTime?
+
+  initiator    User          @relation("RequestInitiator", fields: [initiatorId], references: [id], onDelete: Cascade)
+  target       User          @relation("RequestTarget", fields: [targetId], references: [id], onDelete: Cascade)
+  asset        Asset?        @relation(fields: [assetId], references: [id], onDelete: Cascade)
+  buyerProfile BuyerProfile? @relation(fields: [buyerProfileId], references: [id], onDelete: Cascade)
+
+  // SQLite treats NULLs as distinct in a unique index, so these two constraints
+  // stop duplicate outreach without blocking the opposite direction
+  @@unique([initiatorId, assetId])
+  @@unique([initiatorId, buyerProfileId])
+  @@index([targetId, status])
+  @@index([initiatorId, status])
+}
+
+model ModerationAction {
+  id          String   @id @default(cuid())
+  actorId     String
+  targetType  String
+  targetId    String
+  // denormalised so the log stays readable after the target is removed
+  targetLabel String
+  action      String
+  reason      String
+  createdAt   DateTime @default(now())
+
+  actor User @relation("ModerationActor", fields: [actorId], references: [id], onDelete: Cascade)
+
+  @@index([createdAt])
+  @@index([targetType, targetId])
+}
