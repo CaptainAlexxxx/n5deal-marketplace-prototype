@@ -6,6 +6,23 @@ manager who moderates both sides.
 
 Built as a technical assignment, so it is a prototype rather than a production system.
 
+## Screenshots
+
+**Sign-in with one-click demo accounts**
+![Sign-in with one-click demo accounts](docs/screenshots/01-login.png)
+
+**Buyer dashboard, assets ranked against the mandate**
+![Buyer dashboard, assets ranked against the mandate](docs/screenshots/02-buyer-dashboard.png)
+
+**Asset page with mandate fit breakdown**
+![Asset page with mandate fit breakdown](docs/screenshots/03-asset-detail.png)
+
+**Platform manager: participant moderation**
+![Platform manager: participant moderation](docs/screenshots/04-admin-participants.png)
+
+**Contact requests between buyers and sellers**
+![Contact requests between buyers and sellers](docs/screenshots/05-contacts.png)
+
 ## Run it
 
 Needs Node 18.18 or newer. Nothing external to configure, the database is a local SQLite
