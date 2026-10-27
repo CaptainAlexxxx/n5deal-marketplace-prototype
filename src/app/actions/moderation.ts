@@ -14,6 +14,9 @@ const schema = z.object({
     .max(500, "Keep the reason under 500 characters"),
 });
 
+const STALE_ACCOUNT = "This account was changed by someone else, reload and try again";
+const STALE_LISTING = "This listing was changed by someone else, reload and try again";
+
 function refreshAdmin() {
   revalidatePath("/admin/participants");
   revalidatePath("/admin/assets");
@@ -42,16 +45,17 @@ export async function suspendUserAction(
 
   // Listings keep their own status. Suspension hides the participant through the
   // catalogue queries, so reinstating restores everything without a second pass.
-  await prisma.$transaction([
-    prisma.user.update({
-      where: { id: target.id },
+  const done = await prisma.$transaction(async (tx) => {
+    const { count } = await tx.user.updateMany({
+      where: { id: target.id, status: "ACTIVE" },
       data: {
         status: "SUSPENDED",
         suspendedAt: new Date(),
         suspendReason: parsed.data.reason,
       },
-    }),
-    prisma.moderationAction.create({
+    });
+    if (count === 0) return false;
+    await tx.moderationAction.create({
       data: {
         actorId: actor.id,
         targetType: "USER",
@@ -60,8 +64,10 @@ export async function suspendUserAction(
         action: "SUSPEND_USER",
         reason: parsed.data.reason,
       },
-    }),
-  ]);
+    });
+    return true;
+  });
+  if (!done) return { error: STALE_ACCOUNT };
 
   refreshAdmin();
   return { ok: "Participant suspended" };
@@ -88,12 +94,14 @@ export async function reinstateUserAction(
     return { error: "Only suspended accounts can be reinstated" };
   }
 
-  await prisma.$transaction([
-    prisma.user.update({
-      where: { id: target.id },
+  // Conditional on SUSPENDED, so a removal that lands first cannot be undone.
+  const done = await prisma.$transaction(async (tx) => {
+    const { count } = await tx.user.updateMany({
+      where: { id: target.id, status: "SUSPENDED" },
       data: { status: "ACTIVE", suspendedAt: null, suspendReason: null },
-    }),
-    prisma.moderationAction.create({
+    });
+    if (count === 0) return false;
+    await tx.moderationAction.create({
       data: {
         actorId: actor.id,
         targetType: "USER",
@@ -102,8 +110,10 @@ export async function reinstateUserAction(
         action: "REINSTATE_USER",
         reason: parsed.data.reason,
       },
-    }),
-  ]);
+    });
+    return true;
+  });
+  if (!done) return { error: STALE_ACCOUNT };
 
   refreshAdmin();
   return { ok: "Participant reinstated with their listings intact" };
@@ -130,41 +140,38 @@ export async function removeUserAction(
 
   // Removal is a soft delete. Nothing is destroyed, because a marketplace has to
   // be able to answer questions about a deal months after the fact.
-  await prisma.$transaction([
-    prisma.user.update({
-      where: { id: target.id },
+  const done = await prisma.$transaction(async (tx) => {
+    const { count } = await tx.user.updateMany({
+      where: { id: target.id, status: { in: ["ACTIVE", "SUSPENDED"] } },
       data: {
         status: "REMOVED",
         suspendedAt: new Date(),
         suspendReason: parsed.data.reason,
       },
-    }),
-    ...(target.sellerProfile
-      ? [
-          prisma.asset.updateMany({
-            // A listing suspended on its own keeps that state, so the reason it
-            // was pulled stays visible.
-            where: { sellerId: target.sellerProfile.id, status: { not: "SUSPENDED" } },
-            data: { status: "ARCHIVED" },
-          }),
-        ]
-      : []),
-    ...(target.buyerProfile
-      ? [
-          prisma.buyerProfile.update({
-            where: { id: target.buyerProfile.id },
-            data: { isPublished: false },
-          }),
-        ]
-      : []),
-    prisma.contactRequest.updateMany({
+    });
+    if (count === 0) return false;
+    if (target.sellerProfile) {
+      await tx.asset.updateMany({
+        // A listing suspended on its own keeps that state, so the reason it
+        // was pulled stays visible.
+        where: { sellerId: target.sellerProfile.id, status: { not: "SUSPENDED" } },
+        data: { status: "ARCHIVED" },
+      });
+    }
+    if (target.buyerProfile) {
+      await tx.buyerProfile.update({
+        where: { id: target.buyerProfile.id },
+        data: { isPublished: false },
+      });
+    }
+    await tx.contactRequest.updateMany({
       where: {
         status: "PENDING",
         OR: [{ initiatorId: target.id }, { targetId: target.id }],
       },
       data: { status: "CLOSED", respondedAt: new Date() },
-    }),
-    prisma.moderationAction.create({
+    });
+    await tx.moderationAction.create({
       data: {
         actorId: actor.id,
         targetType: "USER",
@@ -173,8 +180,10 @@ export async function removeUserAction(
         action: "REMOVE_USER",
         reason: parsed.data.reason,
       },
-    }),
-  ]);
+    });
+    return true;
+  });
+  if (!done) return { error: STALE_ACCOUNT };
 
   refreshAdmin();
   return { ok: "Participant removed, listings archived and open requests closed" };
@@ -195,9 +204,13 @@ export async function suspendAssetAction(
   if (!asset) return { error: "Listing not found" };
   if (asset.status !== "PUBLISHED") return { error: "Only published listings can be suspended" };
 
-  await prisma.$transaction([
-    prisma.asset.update({ where: { id: asset.id }, data: { status: "SUSPENDED" } }),
-    prisma.moderationAction.create({
+  const done = await prisma.$transaction(async (tx) => {
+    const { count } = await tx.asset.updateMany({
+      where: { id: asset.id, status: "PUBLISHED" },
+      data: { status: "SUSPENDED" },
+    });
+    if (count === 0) return false;
+    await tx.moderationAction.create({
       data: {
         actorId: actor.id,
         targetType: "ASSET",
@@ -206,8 +219,10 @@ export async function suspendAssetAction(
         action: "SUSPEND_ASSET",
         reason: parsed.data.reason,
       },
-    }),
-  ]);
+    });
+    return true;
+  });
+  if (!done) return { error: STALE_LISTING };
 
   refreshAdmin();
   revalidatePath(`/assets/${asset.id}`);
@@ -229,9 +244,13 @@ export async function reinstateAssetAction(
   if (!asset) return { error: "Listing not found" };
   if (asset.status !== "SUSPENDED") return { error: "This listing is not suspended" };
 
-  await prisma.$transaction([
-    prisma.asset.update({ where: { id: asset.id }, data: { status: "PUBLISHED" } }),
-    prisma.moderationAction.create({
+  const done = await prisma.$transaction(async (tx) => {
+    const { count } = await tx.asset.updateMany({
+      where: { id: asset.id, status: "SUSPENDED" },
+      data: { status: "PUBLISHED" },
+    });
+    if (count === 0) return false;
+    await tx.moderationAction.create({
       data: {
         actorId: actor.id,
         targetType: "ASSET",
@@ -240,8 +259,10 @@ export async function reinstateAssetAction(
         action: "REINSTATE_ASSET",
         reason: parsed.data.reason,
       },
-    }),
-  ]);
+    });
+    return true;
+  });
+  if (!done) return { error: STALE_LISTING };
 
   refreshAdmin();
   revalidatePath(`/assets/${asset.id}`);
