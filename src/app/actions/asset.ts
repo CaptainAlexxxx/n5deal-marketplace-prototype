@@ -7,8 +7,10 @@ import { z } from "zod";
 import { actingUser } from "@/lib/auth/guards";
 import { canEditAsset } from "@/lib/auth/policies";
 import { prisma } from "@/lib/db";
+import { applyTransition } from "@/lib/domain/asset-status";
 import {
   ASSET_STATUSES,
+  type AssetStatus,
   BUSINESS_STATUSES,
   LABELS,
   LICENSE_TYPES,
@@ -144,18 +146,27 @@ export async function saveAssetAction(
       return { error: "A suspended listing can only be changed by a platform manager" };
     }
 
-    await prisma.$transaction([
-      prisma.assetBenefit.deleteMany({ where: { assetId } }),
-      prisma.asset.update({
-        where: { id: assetId },
-        data: {
-          ...shared,
-          status: publish ? "PUBLISHED" : existing.status === "PUBLISHED" ? "DRAFT" : existing.status,
-          publishedAt: publish ? (existing.publishedAt ?? new Date()) : existing.publishedAt,
-          benefits: { create: benefits.map((b) => ({ benefitId: b.id })) },
-        },
-      }),
-    ]);
+    const nextStatus = (
+      publish ? "PUBLISHED" : existing.status === "PUBLISHED" ? "DRAFT" : existing.status
+    ) as AssetStatus;
+
+    // Conditional on the status read above, so a manager suspending the listing
+    // in the meantime is not overwritten by this save.
+    const saved = await prisma.$transaction(async (tx) => {
+      const { count } = await tx.asset.updateMany({
+        where: { id: assetId, status: existing.status },
+        data: { ...shared, ...applyTransition(existing, nextStatus) },
+      });
+      if (count === 0) return false;
+      await tx.assetBenefit.deleteMany({ where: { assetId } });
+      await tx.assetBenefit.createMany({
+        data: benefits.map((b) => ({ assetId, benefitId: b.id })),
+      });
+      return true;
+    });
+    if (!saved) {
+      return { error: "This listing changed while you were editing, reload and try again" };
+    }
   } else {
     const created = await createWithReference({
       ...shared,
@@ -225,22 +236,13 @@ export async function setAssetStatusAction(
     if (blocker) return { error: `${blocker}. Open the listing and complete it first.` };
   }
 
-  // Coming back from the archive counts as a fresh listing, otherwise it
-  // reappears buried at the bottom of "Newest listings".
-  const republished = parsed.data.next === "PUBLISHED" && asset.status === "ARCHIVED";
-
-  await prisma.asset.update({
-    where: { id: asset.id },
-    data: {
-      status: parsed.data.next,
-      publishedAt:
-        parsed.data.next !== "PUBLISHED"
-          ? asset.publishedAt
-          : republished || !asset.publishedAt
-            ? new Date()
-            : asset.publishedAt,
-    },
+  const { count } = await prisma.asset.updateMany({
+    where: { id: asset.id, status: asset.status },
+    data: applyTransition(asset, parsed.data.next),
   });
+  if (count === 0) {
+    return { error: "This listing changed in the meantime, reload and try again" };
+  }
 
   revalidatePath("/my-assets");
   revalidatePath("/assets");
