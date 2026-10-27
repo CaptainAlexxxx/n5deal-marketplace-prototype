@@ -458,6 +458,19 @@ function describe(a: AssetSeed, countryName: string, regulator: string, category
 }
 
 async function main() {
+  // Without DEMO_MODE only the reference lists are created, and never wiped.
+  if (process.env.DEMO_MODE !== "true") {
+    if ((await prisma.category.count()) === 0) {
+      await prisma.category.createMany({ data: CATEGORIES });
+      await prisma.country.createMany({
+        data: COUNTRIES.map(({ slug, name, code }) => ({ slug, name, code })),
+      });
+      await prisma.benefit.createMany({ data: BENEFITS });
+    }
+    console.log("DEMO_MODE is not true: seeded reference data only, no demo accounts.");
+    return;
+  }
+
   // Reseeding on top of an existing database is safe.
   await prisma.moderationAction.deleteMany();
   await prisma.contactRequest.deleteMany();

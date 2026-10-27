@@ -14,10 +14,10 @@ const DEMO_ACCOUNTS = [
   { label: "Suspended", email: "buyer.blocked@n5deal.demo", note: "Blocked account view" },
 ];
 
-export function LoginForm({ next }: { next: string }) {
+export function LoginForm({ next, demo }: { next: string; demo: boolean }) {
   const [state, action] = useActionState(loginAction, emptyFormState);
-  const [email, setEmail] = useState("buyer@n5deal.demo");
-  const [password, setPassword] = useState("demo1234");
+  const [email, setEmail] = useState(demo ? "buyer@n5deal.demo" : "");
+  const [password, setPassword] = useState(demo ? "demo1234" : "");
 
   return (
     <div className="space-y-6">
@@ -62,27 +62,29 @@ export function LoginForm({ next }: { next: string }) {
         </SubmitButton>
       </form>
 
-      <div className="rounded-xl border border-line bg-surface p-4">
-        <p className="text-xs font-medium uppercase tracking-wide text-muted">
-          Demo accounts (password demo1234)
-        </p>
-        <div className="mt-3 grid grid-cols-2 gap-2">
-          {DEMO_ACCOUNTS.map((account) => (
-            <button
-              key={account.email}
-              type="button"
-              onClick={() => {
-                setEmail(account.email);
-                setPassword("demo1234");
-              }}
-              className="rounded-lg border border-line px-3 py-2 text-left transition-colors hover:border-brand/60"
-            >
-              <span className="block text-sm text-ink">{account.label}</span>
-              <span className="block text-[11px] text-muted">{account.note}</span>
-            </button>
-          ))}
+      {demo ? (
+        <div className="rounded-xl border border-line bg-surface p-4">
+          <p className="text-xs font-medium uppercase tracking-wide text-muted">
+            Demo accounts (password demo1234)
+          </p>
+          <div className="mt-3 grid grid-cols-2 gap-2">
+            {DEMO_ACCOUNTS.map((account) => (
+              <button
+                key={account.email}
+                type="button"
+                onClick={() => {
+                  setEmail(account.email);
+                  setPassword("demo1234");
+                }}
+                className="rounded-lg border border-line px-3 py-2 text-left transition-colors hover:border-brand/60"
+              >
+                <span className="block text-sm text-ink">{account.label}</span>
+                <span className="block text-[11px] text-muted">{account.note}</span>
+              </button>
+            ))}
+          </div>
         </div>
-      </div>
+      ) : null}
 
       <p className="text-center text-sm text-muted">
         No account?{" "}
