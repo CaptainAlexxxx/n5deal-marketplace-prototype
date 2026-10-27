@@ -12,7 +12,7 @@
     "lint": "eslint",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "db:setup": "prisma migrate deploy && prisma db seed",
+    "db:setup": "node scripts/ensure-env.mjs && prisma migrate deploy && prisma db seed",
     "db:reset": "prisma migrate reset --force",
     "postinstall": "prisma generate"
   },
