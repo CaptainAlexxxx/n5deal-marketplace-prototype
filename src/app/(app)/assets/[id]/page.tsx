@@ -11,6 +11,7 @@ import { FactRow } from "@/components/ui/stat";
 import { contactSellerAction } from "@/app/actions/contact";
 import { requireActive } from "@/lib/auth/guards";
 import { canViewAsset, contactDetailsVisible } from "@/lib/auth/policies";
+import { recordAssetView } from "@/lib/asset-views";
 import { prisma } from "@/lib/db";
 import {
   LABELS,
@@ -66,9 +67,7 @@ export default async function AssetPage({ params }: { params: Promise<{ id: stri
 
   if (isBuyer) {
     // Counted after the response is sent, so the page render stays read-only.
-    after(() =>
-      prisma.asset.update({ where: { id: asset.id }, data: { views: { increment: 1 } } }),
-    );
+    after(() => recordAssetView(asset.id, user.id));
   }
 
   const match = profile

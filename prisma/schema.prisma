@@ -22,6 +22,7 @@ model User {
   sentRequests      ContactRequest[]   @relation("RequestInitiator")
   receivedRequests  ContactRequest[]   @relation("RequestTarget")
   moderationActions ModerationAction[] @relation("ModerationActor")
+  assetViews        AssetView[]
 
   @@index([role, status])
 }
@@ -148,6 +149,8 @@ model Asset {
   ebitdaEur        Int?
   employees        Int
   yearOfIssue      Int
+  // unique viewers, see AssetView
+  // unique signed-in buyers, see AssetView
   views            Int    @default(0)
 
   status      String    @default("DRAFT")
@@ -160,6 +163,7 @@ model Asset {
   country  Country          @relation(fields: [countryId], references: [id])
   benefits AssetBenefit[]
   requests ContactRequest[]
+  viewers  AssetView[]
 
   @@index([status, publishedAt])
   @@index([sellerId])
@@ -172,7 +176,8 @@ model ContactRequest {
   id             String    @id @default(cuid())
   initiatorId    String
   targetId       String
-  // exactly one of these is set: assetId for buyer -> seller, buyerProfileId for seller -> buyer
+  // exactly one of these is set: assetId for buyer -> seller, buyerProfileId for seller -> buyer.
+  // Enforced by a CHECK constraint added in raw SQL (Prisma cannot express it).
   assetId        String?
   buyerProfileId String?
   message        String
@@ -192,6 +197,18 @@ model ContactRequest {
   @@unique([initiatorId, buyerProfileId])
   @@index([targetId, status])
   @@index([initiatorId, status])
+}
+
+model AssetView {
+  assetId   String
+  userId    String
+  createdAt DateTime @default(now())
+
+  asset Asset @relation(fields: [assetId], references: [id], onDelete: Cascade)
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([assetId, userId])
+  @@index([userId])
 }
 
 model ModerationAction {
