@@ -1,5 +1,7 @@
 # N5Deal Marketplace Prototype
 
+The version submitted for the assignment is tagged `submitted`.
+
 A marketplace for M&A in regulated financial services: sellers list licensed entities and operating businesses, buyers publish mandates, and a platform manager moderates both sides. Built as a technical assignment, so a prototype rather than a production system.
 
 ## Screenshots
@@ -25,10 +27,18 @@ Needs Node 18.18 or newer. The database is a local SQLite file, nothing else to 
 
 ```bash
 npm install
-cp .env.example .env      # Windows: copy .env.example .env
-npm run db:setup          # creates prisma/dev.db, applies migrations, seeds demo data
+npm run db:setup          # creates .env if missing, generates AUTH_SECRET, applies migrations, seeds demo data
 npm run dev
 ```
+
+### Configuration
+
+| Variable | Notes |
+| --- | --- |
+| `DATABASE_URL` | SQLite file, `file:./dev.db` by default |
+| `AUTH_SECRET` | Empty in `.env.example`. `npm run db:setup` writes a random one into `.env` if it is missing. In production the server refuses to start when it is unset or a known demo value. Set your own with `openssl rand -base64 32` |
+| `DEMO_MODE` | `true` in `.env.example`. Shows the one-click demo accounts on the login page and seeds the 19 demo accounts. Without it the login page has no demo accounts and the seed only creates the reference lists (categories, jurisdictions, benefits). Remove it for any real deployment |
+| `AUTH_TRUST_HOST` | Commented out. Set it to `true` only when the production build runs behind a proxy or off localhost |
 
 Open http://localhost:3000 (or http://127.0.0.1:3000 if `localhost` resolves to IPv6 first). `npm run db:reset` wipes and reseeds; the seed is deterministic.
 
@@ -84,7 +94,9 @@ Not built: email delivery, NDA workflow, document room, payments, email verifica
 npm test
 ```
 
-Vitest unit tests cover the three pure modules: the permission rules in `policies.ts` (roles, suspended accounts, ownership, self-contact, who sees contact details), the fit scoring in `match.ts` (weights, ticket range boundaries, label thresholds, reasons and misses) and the query-string parsing in `params.ts` (unknown values dropped, bounds, round trip). Server actions and pages are not covered. CI runs typecheck, lint and tests on every push.
+Vitest unit tests cover the pure modules: the permission rules in `policies.ts` (roles, suspended accounts, ownership, self-contact, who sees contact details), the fit scoring in `match.ts` (weights, ticket range boundaries, label thresholds, reasons and misses), the query-string parsing in `params.ts` (unknown values dropped, bounds, round trip), the listing status transition and the production environment check.
+
+Server actions are tested against a real SQLite database. A global setup applies the migrations once to a temp file, each test file gets its own copy, and `next/cache`, `next/navigation` and the auth guard are mocked. Covered: concurrent contact responses (exactly one wins), duplicate outreach (unique indexes), the one-subject CHECK on contact requests, reinstate racing remove (a removed user stays removed), listing suspend and republish, a seller save racing a manager suspension, republish resetting `publishedAt`, and unique-viewer counting. Pages and components are not covered. CI runs typecheck, lint and tests on every push.
 
 ## AI tools
 
